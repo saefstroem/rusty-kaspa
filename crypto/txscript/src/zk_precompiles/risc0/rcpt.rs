@@ -16,13 +16,11 @@
 use std::collections::BTreeMap;
 
 use alloc::{collections::VecDeque, string::String, vec::Vec};
-use borsh::{BorshDeserialize, BorshSerialize};
 use risc0_binfmt::read_sha_halfs;
 use risc0_circuit_recursion::{CIRCUIT, CircuitImpl, control_id::ALLOWED_CONTROL_ROOT};
 use risc0_core::field::baby_bear::BabyBearElem;
 use risc0_zkp::core::hash::{HashSuite, blake2b::Blake2bCpuHashSuite, poseidon2::Poseidon2HashSuite, sha::Sha256HashSuite};
 use risc0_zkp::{adapter::CircuitInfo, core::digest::Digest, verify::VerificationError};
-use serde::Serialize;
 
 use crate::zk_precompiles::risc0::R0Error;
 use crate::zk_precompiles::risc0::merkle::MerkleProof;
@@ -36,7 +34,7 @@ use crate::zk_precompiles::risc0::merkle::MerkleProof;
 ///
 /// This is a modified version of the SuccinctReceipt defined in risc0. The reason for this is to
 /// simplify it, as we are certain to only receive digests for the claim and verifier parameters.
-#[derive(Debug, Serialize, BorshSerialize, BorshDeserialize)]
+#[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct SuccinctReceipt {
     /// The cryptographic seal of this receipt. This seal is a STARK proving an execution of the

@@ -17,9 +17,17 @@ mod test {
         use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
         use std::time::{Duration, Instant};
 
-        // Load the STARK proof hex from files
-        let stark_proof_hex = include_str!("succinct.proof.hex");
-        let stark_proof_bytes = decode(stark_proof_hex).expect("Failed to decode hex STARK proof");
+        // Load the STARK proof fields from files
+        let stark_seal_hex = include_str!("succinct.seal.hex");
+        let stark_seal_bytes = decode(stark_seal_hex).expect("Failed to decode hex STARK seal");
+        let stark_claim_hex = include_str!("succinct.claim.hex");
+        let stark_claim_bytes = decode(stark_claim_hex).expect("Failed to decode hex STARK claim");
+        let stark_hashfn_hex = include_str!("succinct.hashfn.hex");
+        let stark_hashfn_bytes = decode(stark_hashfn_hex).expect("Failed to decode hex STARK hashfn");
+        let stark_control_index_hex = include_str!("succinct.control_index.hex");
+        let stark_control_index_bytes = decode(stark_control_index_hex).expect("Failed to decode hex STARK control index");
+        let stark_control_digests_hex = include_str!("succinct.control_digests.hex");
+        let stark_control_digests_bytes = decode(stark_control_digests_hex).expect("Failed to decode hex STARK control digests");
         let stark_image_id_hex = include_str!("succinct.image.hex");
         let stark_image_id_bytes = decode(stark_image_id_hex).expect("Failed to decode hex image id");
         let stark_journal_hex = include_str!("succinct.journal.hex");
@@ -37,7 +45,16 @@ mod test {
         let stark_tag = 0x21;
         let groth16_tag = 0x20;
 
-        let stark_stack = Stack::from(vec![stark_proof_bytes, stark_journal_bytes, stark_image_id_bytes, [stark_tag].to_vec()]);
+        let stark_stack = Stack::from(vec![
+            stark_seal_bytes,
+            stark_claim_bytes,
+            stark_hashfn_bytes,
+            stark_control_index_bytes,
+            stark_control_digests_bytes,
+            stark_journal_bytes,
+            stark_image_id_bytes,
+            [stark_tag].to_vec(),
+        ]);
 
         // Build Groth16 stack with hardcoded values (matching the order from try_verify_stack test)
         let mut groth_stack = Stack::new(Vec::new(), true);
@@ -136,16 +153,33 @@ mod test {
         use rayon::prelude::*;
         use std::time::Instant;
 
-        // Load STARK proof
-        let stark_proof_hex = include_str!("succinct.proof.hex");
-        let stark_proof_bytes = decode(stark_proof_hex).expect("Failed to decode hex STARK proof");
+        // Load STARK proof fields
+        let stark_seal_hex = include_str!("succinct.seal.hex");
+        let stark_seal_bytes = decode(stark_seal_hex).expect("Failed to decode hex STARK seal");
+        let stark_claim_hex = include_str!("succinct.claim.hex");
+        let stark_claim_bytes = decode(stark_claim_hex).expect("Failed to decode hex STARK claim");
+        let stark_hashfn_hex = include_str!("succinct.hashfn.hex");
+        let stark_hashfn_bytes = decode(stark_hashfn_hex).expect("Failed to decode hex STARK hashfn");
+        let stark_control_index_hex = include_str!("succinct.control_index.hex");
+        let stark_control_index_bytes = decode(stark_control_index_hex).expect("Failed to decode hex STARK control index");
+        let stark_control_digests_hex = include_str!("succinct.control_digests.hex");
+        let stark_control_digests_bytes = decode(stark_control_digests_hex).expect("Failed to decode hex STARK control digests");
         let stark_image_id_hex = include_str!("succinct.image.hex");
         let stark_image_id_bytes = decode(stark_image_id_hex).expect("Failed to decode hex image id");
         let stark_journal_hex = include_str!("succinct.journal.hex");
         let stark_journal_bytes = decode(stark_journal_hex).expect("Failed to decode hex journal");
         let stark_tag = 0x21;
 
-        let stark_stack = Stack::from(vec![stark_proof_bytes, stark_journal_bytes, stark_image_id_bytes, [stark_tag].to_vec()]);
+        let stark_stack = Stack::from(vec![
+            stark_seal_bytes,
+            stark_claim_bytes,
+            stark_hashfn_bytes,
+            stark_control_index_bytes,
+            stark_control_digests_bytes,
+            stark_journal_bytes,
+            stark_image_id_bytes,
+            [stark_tag].to_vec(),
+        ]);
 
         // Create batch of proofs
         const BATCH_SIZE: usize = 50;
