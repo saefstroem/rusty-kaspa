@@ -2,7 +2,11 @@ use crate::{
     data_stack::Stack,
     zk_precompiles::{
         ZkPrecompile,
-        risc0::{merkle::MerkleProof, rcpt::SuccinctReceipt, receipt_claim::compute_assert_claim},
+        risc0::{
+            merkle::MerkleProof,
+            rcpt::{HashFnId, SuccinctReceipt},
+            receipt_claim::compute_assert_claim,
+        },
     },
 };
 use kaspa_txscript_errors::TxScriptError;
@@ -15,10 +19,6 @@ pub mod receipt_claim;
 
 pub struct R0SuccinctPrecompile;
 pub use error::R0Error;
-
-const HASHFN_BLAKE2B_ID: u8 = 0;
-const HASHFN_POSEIDON2_ID: u8 = 1;
-const HASHFN_SHA256_ID: u8 = 2;
 
 fn parse_digest(bytes: Vec<u8>) -> Result<Digest, R0Error> {
     Digest::try_from(bytes).map_err(R0Error::Digest)
@@ -33,17 +33,12 @@ fn parse_seal(bytes: Vec<u8>) -> Result<Vec<u32>, R0Error> {
     Ok(bytes.as_chunks::<4>().0.iter().copied().map(u32::from_le_bytes).collect())
 }
 
-fn parse_hashfn(bytes: Vec<u8>) -> Result<String, R0Error> {
+fn parse_hashfn(bytes: Vec<u8>) -> Result<HashFnId, R0Error> {
     if bytes.len() != 1 {
         return Err(R0Error::InvalidHashFnEncoding(bytes.len()));
     }
 
-    match bytes[0] {
-        HASHFN_BLAKE2B_ID => Ok("blake2b".to_string()),
-        HASHFN_POSEIDON2_ID => Ok("poseidon2".to_string()),
-        HASHFN_SHA256_ID => Ok("sha-256".to_string()),
-        id => Err(R0Error::InvalidHashFnId(id)),
-    }
+    HashFnId::try_from(bytes[0])
 }
 
 fn parse_merkle_index(bytes: Vec<u8>) -> Result<u32, R0Error> {
