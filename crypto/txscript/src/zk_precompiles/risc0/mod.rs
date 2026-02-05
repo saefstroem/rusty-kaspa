@@ -73,13 +73,7 @@ impl ZkPrecompile for R0SuccinctPrecompile {
     /// - claim (bytes)
     /// - seal (bytes, u32 le)
     fn verify_zk(dstack: &mut Stack) -> Result<(), Self::Error> {
-        let [image_id] = dstack.pop_raw()?;
-        let [journal] = dstack.pop_raw()?;
-        let [control_digests] = dstack.pop_raw()?;
-        let [control_index] = dstack.pop_raw()?;
-        let [hashfn] = dstack.pop_raw()?;
-        let [claim] = dstack.pop_raw()?;
-        let [seal] = dstack.pop_raw()?;
+        let [seal, claim, hashfn, control_index, control_digests, journal, image_id] = dstack.pop_raw()?;
 
         let seal = parse_seal(seal)?;
         let claim = parse_digest(claim)?;
