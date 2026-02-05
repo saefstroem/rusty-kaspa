@@ -61,6 +61,9 @@ fn parse_digest_list(bytes: Vec<u8>) -> Result<Vec<Digest>, R0Error> {
 impl ZkPrecompile for R0SuccinctPrecompile {
     type Error = R0Error;
     /// Verifies the integrity of a RISC0 succinct proof receipt.
+    ///
+    /// *NOTE: Experimental code; not yet fully audited for mainnet use.* TODO(covpp-mainnet)
+    ///
     /// Expects the following items on the stack (from top to bottom):
     /// - image id (bytes)
     /// - journal (bytes)
