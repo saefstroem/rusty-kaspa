@@ -64,6 +64,7 @@ impl ZkPrecompile for Groth16Precompile {
 mod tests {
     use crate::{
         data_stack::Stack,
+        hex,
         zk_precompiles::{ZkPrecompile, groth16::Groth16Precompile},
     };
 

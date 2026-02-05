@@ -4,6 +4,7 @@ use kaspa_txscript_errors::TxScriptError;
 use crate::{
     EngineFlags, SigCacheKey, TxScriptEngine,
     caches::Cache,
+    hex,
     opcodes::codes::OpZkPrecompile,
     script_builder::{ScriptBuilder, ScriptBuilderResult},
     zk_precompiles::tags::ZkTag,
