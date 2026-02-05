@@ -5,9 +5,34 @@ mod test {
     use rand::thread_rng;
 
     use crate::{
-        data_stack::Stack,
-        zk_precompiles::{parse_tag, verify_zk},
+        EngineFlags, SigCacheKey, TxScriptEngine,
+        caches::Cache,
+        opcodes::codes::OpZkPrecompile,
+        script_builder::{ScriptBuilder, ScriptBuilderResult},
     };
+    use kaspa_consensus_core::{
+        hashing::sighash::{SigHashReusedValuesSync, SigHashReusedValuesUnsync},
+        tx::PopulatedTransaction,
+    };
+
+    fn build_zk_script(elements: &[Vec<u8>]) -> ScriptBuilderResult<Vec<u8>> {
+        let mut builder = ScriptBuilder::new();
+        for element in elements {
+            builder.add_data(element)?;
+        }
+        builder.add_op(OpZkPrecompile)?;
+        Ok(builder.drain())
+    }
+
+    fn execute_zk_script(script: &[u8], sig_cache: &Cache<SigCacheKey, bool>, reused_values: &SigHashReusedValuesUnsync) {
+        let mut vm = TxScriptEngine::<PopulatedTransaction, SigHashReusedValuesUnsync>::from_script(
+            script,
+            reused_values,
+            sig_cache,
+            EngineFlags { covenants_enabled: true },
+        );
+        vm.execute().unwrap();
+    }
 
     #[test]
     fn test_benchmark_verification() {
@@ -45,7 +70,7 @@ mod test {
         let stark_tag = 0x21;
         let groth16_tag = 0x20;
 
-        let stark_stack = Stack::from(vec![
+        let stark_script = build_zk_script(&[
             stark_seal_bytes,
             stark_claim_bytes,
             stark_hashfn_bytes,
@@ -54,19 +79,32 @@ mod test {
             stark_journal_bytes,
             stark_image_id_bytes,
             [stark_tag].to_vec(),
-        ]);
+        ])
+        .unwrap();
 
-        // Build Groth16 stack with hardcoded values (matching the order from try_verify_stack test)
-        let mut groth_stack = Stack::new(Vec::new(), true);
-        groth_stack.push(input4).unwrap();
-        groth_stack.push(input3).unwrap();
-        groth_stack.push(input2).unwrap();
-        groth_stack.push(input1).unwrap();
-        groth_stack.push(input0).unwrap();
-        groth_stack.push_item(5i32).unwrap();
-        groth_stack.push(groth16_proof_bytes).unwrap();
-        groth_stack.push(unprepared_compressed_vk).unwrap();
-        groth_stack.push([groth16_tag].to_vec()).unwrap();
+        // Build Groth16 script with hardcoded values (matching the order from try_verify_stack test)
+        let groth_script = ScriptBuilder::new()
+            .add_data(&input4)
+            .unwrap()
+            .add_data(&input3)
+            .unwrap()
+            .add_data(&input2)
+            .unwrap()
+            .add_data(&input1)
+            .unwrap()
+            .add_data(&input0)
+            .unwrap()
+            .add_i64(5)
+            .unwrap()
+            .add_data(&groth16_proof_bytes)
+            .unwrap()
+            .add_data(&unprepared_compressed_vk)
+            .unwrap()
+            .add_data(&[groth16_tag])
+            .unwrap()
+            .add_op(OpZkPrecompile)
+            .unwrap()
+            .drain();
 
         // Prepare ECDSA verification components (outside timing loop)
         let secp = Secp256k1::new();
@@ -80,11 +118,11 @@ mod test {
 
         // Benchmark STARK verification
         let mut total_stark_time = Duration::ZERO;
+        let sig_cache = Cache::new(0);
+        let reused_values = SigHashReusedValuesUnsync::new();
         for _ in 0..ITERATIONS {
-            let mut stark_stack_clone = stark_stack.clone();
             let start = Instant::now();
-            let tag = parse_tag(&mut stark_stack_clone).unwrap();
-            verify_zk(tag, &mut stark_stack_clone).unwrap();
+            execute_zk_script(&stark_script, &sig_cache, &reused_values);
             total_stark_time += start.elapsed();
         }
         let avg_stark_time = total_stark_time / ITERATIONS;
@@ -92,10 +130,8 @@ mod test {
         // Benchmark Groth16 verification
         let mut total_groth16_time = Duration::ZERO;
         for _ in 0..ITERATIONS {
-            let mut groth_stack_clone = groth_stack.clone();
             let start = Instant::now();
-            let tag = parse_tag(&mut groth_stack_clone).unwrap();
-            verify_zk(tag, &mut groth_stack_clone).unwrap();
+            execute_zk_script(&groth_script, &sig_cache, &reused_values);
             total_groth16_time += start.elapsed();
         }
         let avg_groth16_time = total_groth16_time / ITERATIONS;
@@ -170,7 +206,7 @@ mod test {
         let stark_journal_bytes = decode(stark_journal_hex).expect("Failed to decode hex journal");
         let stark_tag = 0x21;
 
-        let stark_stack = Stack::from(vec![
+        let stark_script = build_zk_script(&[
             stark_seal_bytes,
             stark_claim_bytes,
             stark_hashfn_bytes,
@@ -179,11 +215,12 @@ mod test {
             stark_journal_bytes,
             stark_image_id_bytes,
             [stark_tag].to_vec(),
-        ]);
+        ])
+        .unwrap();
 
         // Create batch of proofs
         const BATCH_SIZE: usize = 50;
-        let proof_batch: Vec<_> = (0..BATCH_SIZE).map(|_| stark_stack.clone()).collect();
+        let proof_batch: Vec<_> = (0..BATCH_SIZE).map(|_| stark_script.clone()).collect();
 
         println!("\n=== Test 2: Batch Verification Parallelism ({} STARK Proofs) ===", BATCH_SIZE);
 
@@ -194,10 +231,16 @@ mod test {
 
             // Warmup
             pool.install(|| {
-                proof_batch.par_iter().all(|stack| {
-                    let mut s = stack.clone();
-                    let tag = parse_tag(&mut s).unwrap();
-                    verify_zk(tag, &mut s).is_ok()
+                proof_batch.par_iter().all(|script| {
+                    let sig_cache = Cache::new(0);
+                    let reused_values = SigHashReusedValuesSync::new();
+                    let mut vm = TxScriptEngine::<PopulatedTransaction, SigHashReusedValuesSync>::from_script(
+                        script,
+                        &reused_values,
+                        &sig_cache,
+                        EngineFlags { covenants_enabled: true },
+                    );
+                    vm.execute().is_ok()
                 });
             });
 
@@ -209,10 +252,16 @@ mod test {
                 let start = Instant::now();
 
                 pool.install(|| {
-                    proof_batch.par_iter().all(|stack| {
-                        let mut s = stack.clone();
-                        let tag = parse_tag(&mut s).unwrap();
-                        verify_zk(tag, &mut s).is_ok()
+                    proof_batch.par_iter().all(|script| {
+                        let sig_cache = Cache::new(0);
+                        let reused_values = SigHashReusedValuesSync::new();
+                        let mut vm = TxScriptEngine::<PopulatedTransaction, SigHashReusedValuesSync>::from_script(
+                            script,
+                            &reused_values,
+                            &sig_cache,
+                            EngineFlags { covenants_enabled: true },
+                        );
+                        vm.execute().is_ok()
                     })
                 });
 
