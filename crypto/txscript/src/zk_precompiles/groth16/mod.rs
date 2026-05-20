@@ -122,9 +122,6 @@ mod tests {
         assert_eq!(buf[8], 0xAA);
     }
 
-    /// Build a synthetic VK with a known `gamma_abc_g1.len()`, serialize it,
-    /// and confirm our offset-based reader extracts the same count without
-    /// depending on a hand-rolled hex fixture.
     fn vk_with_gamma_abc_count(count: usize) -> Vec<u8> {
         let vk = VerifyingKey::<Bn254> {
             alpha_g1: G1Affine::default(),
