@@ -43,7 +43,9 @@ impl ZkPrecompile for Groth16Precompile {
         // Retrieve public inputs
         let mut unprepared_public_inputs = Vec::new();
 
-        // For each public input, pop from the stack and convert to Fr
+        // For each public input, pop from the stack and convert to Fr.
+        //
+        // Note: public input count is bounded by the script stack depth limit.
         for _ in 0..n_inputs {
             let [fr] = dstack.pop_items::<1, Fr>()?;
             // Convert bytes to Fr and add to public inputs
@@ -56,19 +58,28 @@ impl ZkPrecompile for Groth16Precompile {
             .and_then(|s| s.try_into().ok())
             .ok_or(Groth16Error::MalformedVerifyingKey)?;
 
-        let gamma_abc_element_count = u64::from_le_bytes(len_bytes);
-        let gamma_abc_cost = ScriptUnits(gamma_abc_element_count.saturating_mul(GROTH16_GAMMA_ABC_G1_ELEMENT_SCRIPT_UNITS));
+        let gamma_abc_element_count =
+            usize::try_from(u64::from_le_bytes(len_bytes)).map_err(|_| Groth16Error::MalformedVerifyingKey)?;
 
-        // Try consume and throw if we cant
+        // Covered by the following count check but kept for clearer error
+        if gamma_abc_element_count == 0 {
+            return Err(Groth16Error::EmptyGammaAbc);
+        }
+
+        // +1 over an actual array len cannot overflow
+        if unprepared_public_inputs.len() + 1 != gamma_abc_element_count {
+            return Err(ark_relations::gr1cs::SynthesisError::ArityMismatch.into());
+        }
+
+        let gamma_abc_cost = ScriptUnits((gamma_abc_element_count as u64).saturating_mul(GROTH16_GAMMA_ABC_G1_ELEMENT_SCRIPT_UNITS));
+
+        // Try consume and err if we cant
         meter.consume_script_units(gamma_abc_cost)?;
 
         // Deserialize verifying key
         let vk = VerifyingKey::deserialize_compressed(&*unprepared_compressed_key)?;
 
-        if vk.gamma_abc_g1.is_empty() {
-            return Err(Groth16Error::EmptyGammaAbc);
-        }
-
+        // Over-defensive double check that the number of args matches the same parsed count.
         if unprepared_public_inputs.len() + 1 != vk.gamma_abc_g1.len() {
             return Err(ark_relations::gr1cs::SynthesisError::ArityMismatch.into());
         }
@@ -103,7 +114,7 @@ mod tests {
     };
     use ark_bn254::{Bn254, G1Affine, G2Affine};
     use ark_groth16::VerifyingKey;
-    use ark_serialize::{CanonicalSerialize, Compress};
+    use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress};
     use kaspa_consensus_core::mass::ScriptUnits;
     use kaspa_txscript_errors::TxScriptError;
 
@@ -142,33 +153,49 @@ mod tests {
     }
 
     #[test]
-    fn verify_zk_rejects_oversized_vk_via_meter() {
-        const PER_INPUT_BUDGET: ScriptUnits = ScriptUnits(50_000_000);
-        for &count in &[1_000usize, 10_000, 30_000] {
-            let vk_bytes = vk_with_gamma_abc_count(count);
+    fn verify_zk_rejects_arity_mismatch_before_meter_charge() {
+        let vk_bytes = vk_with_gamma_abc_count(5);
 
-            let mut stack = Stack::new(Vec::new(), true);
-            stack.push_item(0i32).unwrap(); // n_inputs = 0
-            stack.push(vec![0u8; 128].into()).unwrap(); // dummy proof , but we should throw earlier
-            stack.push(vk_bytes.into()).unwrap();
+        let mut stack = Stack::new(Vec::new(), true);
+        stack.push_item(0i32).unwrap();
+        stack.push(vec![0u8; 128].into()).unwrap();
+        stack.push(vk_bytes.into()).unwrap();
 
-            let mut meter = RuntimeResourceMeter::new_script_units(ScriptUnits(0), PER_INPUT_BUDGET);
+        let mut meter = RuntimeResourceMeter::new_script_units(ScriptUnits(0), ScriptUnits(0));
+        let err = Groth16Precompile::verify_zk(&mut stack, &mut meter).expect_err("arity mismatch must be rejected");
+        match err {
+            Groth16Error::ArkR1CS(ark_relations::gr1cs::SynthesisError::ArityMismatch) => {}
+            other => panic!("expected ArityMismatch before meter charge, got: {other:?}"),
+        }
+        assert_eq!(meter.used_script_units(), ScriptUnits(0));
+    }
 
-            let expected_charge = (count as u64).saturating_mul(GROTH16_GAMMA_ABC_G1_ELEMENT_SCRIPT_UNITS);
-            assert!(
-                expected_charge > PER_INPUT_BUDGET.0,
-                "gamma_abc charge {expected_charge} must exceed budget {}",
-                PER_INPUT_BUDGET.0
-            );
+    #[test]
+    fn verify_zk_rejects_over_budget_vk_via_meter() {
+        const PER_INPUT_BUDGET: ScriptUnits = ScriptUnits(200_000);
+        const COUNT: usize = 5;
+        let vk_bytes = vk_with_gamma_abc_count(COUNT);
 
-            let err = Groth16Precompile::verify_zk(&mut stack, &mut meter).expect_err("oversized VK must be rejected");
-            match err {
-                Groth16Error::FromTxScript(TxScriptError::ExceededCommittedScriptUnits { used, limit }) => {
-                    assert_eq!(limit, PER_INPUT_BUDGET.0);
-                    assert_eq!(used, PER_INPUT_BUDGET.0 + (expected_charge - PER_INPUT_BUDGET.0));
-                }
-                other => panic!("expected ExceededCommittedScriptUnits for gamma_abc_g1 element count = {count}, got: {other:?}"),
+        let mut stack = Stack::new(Vec::new(), true);
+        for _ in 0..COUNT - 1 {
+            stack.push(vec![0u8; 32].into()).unwrap();
+        }
+        stack.push_item((COUNT - 1) as i32).unwrap();
+        stack.push(vec![0u8; 128].into()).unwrap();
+        stack.push(vk_bytes.into()).unwrap();
+
+        let mut meter = RuntimeResourceMeter::new_script_units(ScriptUnits(0), PER_INPUT_BUDGET);
+
+        let expected_charge = (COUNT as u64).saturating_mul(GROTH16_GAMMA_ABC_G1_ELEMENT_SCRIPT_UNITS);
+        assert!(expected_charge > PER_INPUT_BUDGET.0, "gamma_abc charge {expected_charge} must exceed budget {}", PER_INPUT_BUDGET.0);
+
+        let err = Groth16Precompile::verify_zk(&mut stack, &mut meter).expect_err("over-budget VK must be rejected");
+        match err {
+            Groth16Error::FromTxScript(TxScriptError::ExceededCommittedScriptUnits { used, limit }) => {
+                assert_eq!(limit, PER_INPUT_BUDGET.0);
+                assert_eq!(used, expected_charge);
             }
+            other => panic!("expected ExceededCommittedScriptUnits for gamma_abc_g1 element count = {COUNT}, got: {other:?}"),
         }
     }
 
@@ -182,6 +209,29 @@ mod tests {
                 bytes[VK_FIXED_PREFIX_LEN..VK_FIXED_PREFIX_LEN + GAMMA_ABC_G1_LEN_PREFIX_BYTES].try_into().unwrap();
             assert_eq!(u64::from_le_bytes(len_slice), count as u64, "mismatch for expected gamma_abc_g1 element count = {count}");
         }
+    }
+
+    #[test]
+    fn ark_vk_deserialize_reads_gamma_abc_g1_len_from_expected_offset() {
+        // The precompile meters large VKs by reading the Ark-serialized
+        // gamma_abc_g1 Vec length before deserializing the VK. This locks that
+        // our offset is the same length prefix Ark later uses for deserialization.
+        let mut two_elem_bytes = vk_with_gamma_abc_count(5);
+        let two_elem_len =
+            VK_FIXED_PREFIX_LEN + GAMMA_ABC_G1_LEN_PREFIX_BYTES + 2 * G1Affine::default().serialized_size(Compress::Yes);
+        two_elem_bytes[VK_FIXED_PREFIX_LEN..VK_FIXED_PREFIX_LEN + GAMMA_ABC_G1_LEN_PREFIX_BYTES].copy_from_slice(&2u64.to_le_bytes());
+        two_elem_bytes.truncate(two_elem_len);
+
+        let vk =
+            VerifyingKey::<Bn254>::deserialize_compressed(&*two_elem_bytes).expect("Ark should deserialize two gamma_abc_g1 elements");
+
+        assert_eq!(vk.gamma_abc_g1.len(), 2);
+
+        let mut five_elem_prefix_with_two_elems = two_elem_bytes;
+        five_elem_prefix_with_two_elems[VK_FIXED_PREFIX_LEN..VK_FIXED_PREFIX_LEN + GAMMA_ABC_G1_LEN_PREFIX_BYTES]
+            .copy_from_slice(&5u64.to_le_bytes());
+        VerifyingKey::<Bn254>::deserialize_compressed(&*five_elem_prefix_with_two_elems)
+            .expect_err("Ark should reject when the prefix asks for five gamma_abc_g1 elements but only two are present");
     }
 
     #[test]
