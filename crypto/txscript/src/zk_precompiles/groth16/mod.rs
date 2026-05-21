@@ -140,7 +140,11 @@ impl ZkPrecompile for Groth16Precompile {
 mod tests {
     use super::{GROTH16_GAMMA_ABC_G1_ELEMENT_SCRIPT_UNITS, Groth16Error};
     use crate::{
-        EngineFlags, data_stack::Stack, hex, runtime_resource_meter::RuntimeResourceMeter, zk_precompiles::{ZkPrecompile, groth16::Groth16Precompile, tests::helpers::load_groth_fields}
+        EngineFlags,
+        data_stack::Stack,
+        hex,
+        runtime_resource_meter::RuntimeResourceMeter,
+        zk_precompiles::{ZkPrecompile, groth16::Groth16Precompile, tests::helpers::load_groth_fields},
     };
     use ark_bn254::{Bn254, G1Affine, G2Affine};
     use ark_groth16::VerifyingKey;
