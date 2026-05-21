@@ -7,7 +7,7 @@ use kaspa_consensus_core::mass::ScriptUnits;
 pub use error::Groth16Error;
 
 use crate::{
-    EngineFlags,
+    EngineFlags, MAX_STACK_SIZE,
     data_stack::Stack,
     opcodes::i32s_to_usizes,
     runtime_resource_meter::RuntimeResourceMeter,
@@ -80,7 +80,7 @@ impl ZkPrecompile for Groth16Precompile {
         let [n_inputs] = i32s_to_usizes(dstack.pop_items::<1, i32>()?)?;
 
         // Retrieve public inputs
-        let mut unprepared_public_inputs = Vec::with_capacity(n_inputs);
+        let mut unprepared_public_inputs = Vec::with_capacity(n_inputs.min(MAX_STACK_SIZE));
 
         // For each public input, pop from the stack and convert to Fr.
         //

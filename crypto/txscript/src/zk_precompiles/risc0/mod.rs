@@ -90,7 +90,7 @@ impl ZkPrecompile for R0SuccinctPrecompile {
         let hashfn = parse_hashfn(hashfn)?;
 
         // Post-activation we restrict the hashfn to Poseidon2 only.
-        if flags.zk_hardening_enabled && hashfn != HashFnId::Poseidon2 {
+        if hashfn != HashFnId::Poseidon2 {
             return Err(R0Error::UnsupportedHashFn(hashfn));
         }
 
