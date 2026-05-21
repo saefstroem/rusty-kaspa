@@ -10,7 +10,6 @@ use crate::{
         },
     },
 };
-use kaspa_txscript_errors::TxScriptError;
 use risc0_zkp::core::digest::DIGEST_BYTES;
 pub use risc0_zkp::core::digest::Digest;
 mod error;
@@ -116,7 +115,7 @@ impl ZkPrecompile for R0SuccinctPrecompile {
         // If we were to bypass the compute_assert_claim step, then an attacker could modify the claim in the receipt
         // to match whatever they want and just providing some arbitrary proof. This is why this step is crucial.
         // As this step binds that the provided image id and journal are indeed the ones that were used to generate the proof.
-        compute_assert_claim(rcpt.claim(), image_id, journal).map_err(|e| TxScriptError::ZkIntegrity(e.to_string()))?;
+        compute_assert_claim(rcpt.claim(), image_id, journal)?;
 
         Ok(())
     }
