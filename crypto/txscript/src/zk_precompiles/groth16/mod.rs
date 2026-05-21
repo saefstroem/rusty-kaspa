@@ -66,7 +66,7 @@ impl ZkPrecompile for Groth16Precompile {
         }
 
         // Public inputs are stack-depth bounded, so +1 cannot overflow.
-        if (unprepared_public_inputs.len() + 1) as u64 != gamma_abc_element_count {
+        if unprepared_public_inputs.len() as u64 + 1 != gamma_abc_element_count {
             return Err(ark_relations::gr1cs::SynthesisError::ArityMismatch.into());
         }
 
