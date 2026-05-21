@@ -66,7 +66,7 @@ impl ZkPrecompile for Groth16Precompile {
             return Err(Groth16Error::EmptyGammaAbc);
         }
 
-        // +1 over an actual array len cannot overflow
+        // +1 over an actual array len cannot overflow since the max array len is usize::MAX - 1
         if unprepared_public_inputs.len() + 1 != gamma_abc_element_count {
             return Err(ark_relations::gr1cs::SynthesisError::ArityMismatch.into());
         }
