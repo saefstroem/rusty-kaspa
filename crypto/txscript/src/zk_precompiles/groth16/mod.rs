@@ -58,29 +58,28 @@ impl ZkPrecompile for Groth16Precompile {
             .and_then(|s| s.try_into().ok())
             .ok_or(Groth16Error::MalformedVerifyingKey)?;
 
-        let gamma_abc_element_count =
-            usize::try_from(u64::from_le_bytes(len_bytes)).map_err(|_| Groth16Error::MalformedVerifyingKey)?;
+        let gamma_abc_element_count = u64::from_le_bytes(len_bytes);
 
         // Covered by the following count check but kept for clearer error
         if gamma_abc_element_count == 0 {
             return Err(Groth16Error::EmptyGammaAbc);
         }
 
-        // +1 over an actual array len cannot overflow since the max array len is usize::MAX - 1
-        if unprepared_public_inputs.len() + 1 != gamma_abc_element_count {
+        // Public inputs are stack-depth bounded, so +1 cannot overflow.
+        if (unprepared_public_inputs.len() + 1) as u64 != gamma_abc_element_count {
             return Err(ark_relations::gr1cs::SynthesisError::ArityMismatch.into());
         }
 
-        let gamma_abc_cost = ScriptUnits((gamma_abc_element_count as u64).saturating_mul(GROTH16_GAMMA_ABC_G1_ELEMENT_SCRIPT_UNITS));
+        let gamma_abc_cost = ScriptUnits(gamma_abc_element_count.saturating_mul(GROTH16_GAMMA_ABC_G1_ELEMENT_SCRIPT_UNITS));
 
-        // Try consume and err if we cant
+        // Try consuming the vk cost and err if we are over the limit
         meter.consume_script_units(gamma_abc_cost)?;
 
         // Deserialize verifying key
         let vk = VerifyingKey::deserialize_compressed(&*unprepared_compressed_key)?;
 
-        // Over-defensive double check that the number of args matches the same parsed count.
-        if unprepared_public_inputs.len() + 1 != vk.gamma_abc_g1.len() {
+        // Over-defensive double check that the deserialized vk has the expected gamma_abc_g1 count.
+        if gamma_abc_element_count != vk.gamma_abc_g1.len() as u64 {
             return Err(ark_relations::gr1cs::SynthesisError::ArityMismatch.into());
         }
 
