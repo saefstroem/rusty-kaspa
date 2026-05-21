@@ -80,6 +80,8 @@ impl ZkPrecompile for Groth16Precompile {
         let [n_inputs] = i32s_to_usizes(dstack.pop_items::<1, i32>()?)?;
 
         // Retrieve public inputs
+        // Do not change the capacity argument to allow arbitrary
+        // input, as this would allow adversary to cause OOM
         let mut unprepared_public_inputs = Vec::with_capacity(n_inputs.min(MAX_STACK_SIZE));
 
         // For each public input, pop from the stack and convert to Fr.
