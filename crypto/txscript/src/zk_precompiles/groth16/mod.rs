@@ -69,12 +69,6 @@ impl ZkPrecompile for Groth16Precompile {
     ///
     /// *NOTE: Experimental code; not yet fully audited for mainnet use.* TODO(pre-covpp)
     ///
-    /// Activation gating (`flags.zk_hardening_enabled`):
-    ///   - Public inputs are popped as strict `Fr` (post) or legacy `TruncFr` (pre).
-    ///   - VK deserialization runs through `deserialize_verifying_key_with_metering`
-    ///     (arity check + per-element meter charge) post-activation; pre-activation
-    ///     uses ark's plain `deserialize_compressed` so historical txs validate
-    ///     exactly as they did before the hardening landed.
     fn verify_zk(dstack: &mut Stack, meter: &mut RuntimeResourceMeter, flags: EngineFlags) -> Result<(), Self::Error> {
         // Retrieve the compressed VK
         let [unprepared_compressed_key] = dstack.pop_raw()?;
@@ -110,12 +104,12 @@ impl ZkPrecompile for Groth16Precompile {
         let vk = if flags.zk_hardening_enabled {
             deserialize_verifying_key_with_metering(&unprepared_compressed_key, unprepared_public_inputs.len(), meter)?
         } else {
-            let vk = VerifyingKey::deserialize_compressed(&*unprepared_compressed_key)?;
-            if vk.gamma_abc_g1.is_empty() {
-                return Err(Groth16Error::EmptyGammaAbc);
-            }
-            vk
+            VerifyingKey::deserialize_compressed(&*unprepared_compressed_key)?
         };
+
+        if vk.gamma_abc_g1.is_empty() {
+            return Err(Groth16Error::EmptyGammaAbc);
+        }
 
         // Prepare verifying key
         let pvk = ark_groth16::prepare_verifying_key(&vk);
