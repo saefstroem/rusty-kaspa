@@ -819,7 +819,7 @@ pub const TESTNET12_PARAMS: Params = Params {
 
     crescendo_activation: ForkActivation::always(),
     toccata_activation: ForkActivation::always(),
-    zk_hardening_activation: ForkActivation::always(),
+    zk_hardening_activation: ForkActivation::never(),
     ..TESTNET_PARAMS
 };
 
@@ -911,7 +911,7 @@ pub const DEVNET_PARAMS: Params = Params {
 
     crescendo_activation: ForkActivation::always(),
     toccata_activation: ForkActivation::never(),
-    zk_hardening_activation: ForkActivation::never(),
+    zk_hardening_activation: ForkActivation::always(),
 };
 
 #[cfg(test)]
