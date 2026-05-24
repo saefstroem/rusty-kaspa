@@ -14,8 +14,8 @@ use crate::{
 pub struct Fr(ark_bn254::Fr);
 
 impl Fr {
-    pub fn field(&self) -> &ark_bn254::Fr {
-        &self.0
+    pub fn into_field(self) -> ark_bn254::Fr {
+        self.0
     }
 }
 

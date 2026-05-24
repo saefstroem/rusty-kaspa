@@ -7,7 +7,7 @@ use kaspa_consensus_core::mass::ScriptUnits;
 pub use error::Groth16Error;
 
 use crate::{
-    EngineFlags, MAX_STACK_SIZE,
+    EngineFlags,
     data_stack::Stack,
     opcodes::i32s_to_usizes,
     runtime_resource_meter::RuntimeResourceMeter,
@@ -80,9 +80,10 @@ impl ZkPrecompile for Groth16Precompile {
         let [n_inputs] = i32s_to_usizes(dstack.pop_items::<1, i32>()?)?;
 
         // Retrieve public inputs
-        // Do not change the capacity argument to allow arbitrary
-        // input, as this would allow adversary to cause OOM
-        let mut unprepared_public_inputs = Vec::with_capacity(n_inputs.min(MAX_STACK_SIZE));
+        // Do not change the capacity argument to allow arbitrary input, as
+        // this would allow an adversary to cause OOM. The actual remaining stack
+        // length is an upper bound on how many inputs can be read.
+        let mut unprepared_public_inputs = Vec::with_capacity(n_inputs.min(dstack.len()));
 
         // For each public input, pop from the stack and convert to Fr.
         //
@@ -96,7 +97,7 @@ impl ZkPrecompile for Groth16Precompile {
                 let [trunc_fr] = dstack.pop_items::<1, TruncFr>()?;
                 Fr::from(trunc_fr)
             };
-            unprepared_public_inputs.push(fr);
+            unprepared_public_inputs.push(fr.into_field());
         }
 
         // Deserialize the verifying key. Post-activation: streamed deserialize
@@ -106,12 +107,12 @@ impl ZkPrecompile for Groth16Precompile {
         let vk = if flags.zk_hardening_enabled {
             deserialize_verifying_key_with_metering(&unprepared_compressed_key, unprepared_public_inputs.len(), meter)?
         } else {
-            VerifyingKey::deserialize_compressed(&*unprepared_compressed_key)?
+            let vk = VerifyingKey::deserialize_compressed(&*unprepared_compressed_key)?;
+            if vk.gamma_abc_g1.is_empty() {
+                return Err(Groth16Error::EmptyGammaAbc);
+            }
+            vk
         };
-
-        if vk.gamma_abc_g1.is_empty() {
-            return Err(Groth16Error::EmptyGammaAbc);
-        }
 
         // Prepare verifying key
         let pvk = ark_groth16::prepare_verifying_key(&vk);
@@ -120,8 +121,7 @@ impl ZkPrecompile for Groth16Precompile {
         let proof: &Proof<ark_ec::bn::Bn<ark_bn254::Config>> = &Proof::deserialize_compressed(&*proof_bytes)?;
 
         // Prepare public inputs with the prepared verifying key
-        let prepared_inputs =
-            Groth16::<Bn254>::prepare_inputs(&pvk, &unprepared_public_inputs.iter().map(|x| *x.field()).collect::<Vec<_>>())?;
+        let prepared_inputs = Groth16::<Bn254>::prepare_inputs(&pvk, &unprepared_public_inputs)?;
 
         // Verify the proof with the prepared inputs
         if Groth16::<Bn254>::verify_proof_with_prepared_inputs(&pvk, proof, &prepared_inputs)? {
@@ -138,7 +138,6 @@ mod tests {
     use crate::{
         EngineFlags,
         data_stack::Stack,
-        hex,
         runtime_resource_meter::RuntimeResourceMeter,
         zk_precompiles::{ZkPrecompile, groth16::Groth16Precompile, tests::helpers::load_groth_fields},
     };
